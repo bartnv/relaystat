@@ -17,22 +17,18 @@ fn main() {
 //  let client = TcpStream::connect(&*args[2]).unwrap_or_else(|e| { println!("Failed to connect to address {}", args[2]); exit(1); });
 
   thread::spawn(move || {
-    loop {
-      match server.accept() { // Might also iterate over incoming() here
-        Ok(res) => {
-          let (stream, addr) = res;
-          let my_input = input.clone();
-          println!("New incoming connection from {}", addr);
-          thread::spawn(move || {
-            let stream = BufReader::new(stream);
-            for line in stream.lines() {
-              my_input.send(line.unwrap()).unwrap();
-            }
-            println!("Connection from {} closed", addr);
-          });
+    for res in server.incoming() {
+      let stream = res.unwrap();
+      let addr = stream.peer_addr().unwrap();
+      let my_input = input.clone();
+      println!("New incoming connection from {}", addr);
+      thread::spawn(move || {
+        let stream = BufReader::new(stream);
+        for line in stream.lines() {
+          my_input.send(line.unwrap()).unwrap();
         }
-        Err(_) => panic!("Error in accept()")
-      }
+        println!("Connection from {} closed", addr);
+      });
     }
   });
 
