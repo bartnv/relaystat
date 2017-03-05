@@ -1,13 +1,11 @@
-use std::process::exit;
+use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpStream, TcpListener};
-use std::thread;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Write;
-use std::time::Duration;
+use std::process::exit;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::thread;
+use std::time::{Duration, Instant};
 
-static GLOBAL_THREAD_COUNT: AtomicUsize = ATOMIC_USIZE_INIT;
+static INPUTS: AtomicUsize = ATOMIC_USIZE_INIT;
 
 fn connect(addr: &str) -> TcpStream {
   let recon_delay = Duration::new(30, 0);
@@ -42,19 +40,20 @@ fn main() {
       let my_input = input.clone();
       println!("New incoming connection from {}", addr);
       thread::spawn(move || {
-        GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
+        INPUTS.fetch_add(1, Ordering::SeqCst);
         let stream = BufReader::new(stream);
         for line in stream.lines() {
           my_input.send(line.unwrap()).unwrap();
         }
         println!("Connection from {} closed", addr);
-        GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
+        INPUTS.fetch_sub(1, Ordering::SeqCst);
       });
     }
   });
 
-  let mut client = connect(&*args[2]);
   let mut lines_written = 0;
+  let mut client = connect(&*args[2]);
+  let mut conn_since = Instant::now();
 
   loop {
     let mut line = output.recv().unwrap();
@@ -63,12 +62,13 @@ fn main() {
       match client.write_all(line.as_bytes()) {
         Ok(_) => {
           lines_written += 1;
-          if lines_written%100 == 0 { println!("{:?} incoming connections | {} lines received", GLOBAL_THREAD_COUNT, lines_written); }
+          if lines_written%100 == 0 { println!("{} incoming connections | {} lines received | connected for {:?}", INPUTS.load(Ordering::SeqCst), lines_written, conn_since.elapsed()); }
           break;
         }
         Err(e) => {
           println!("Write error [{}]; reconnecting...", e.to_string());
           client = connect(&*args[2]);
+          conn_since = Instant::now();
         }
       }
     }
