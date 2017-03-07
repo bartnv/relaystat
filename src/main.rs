@@ -7,8 +7,40 @@ use std::time::{Duration, Instant};
 
 static INPUTS: AtomicUsize = ATOMIC_USIZE_INIT;
 
+pub trait DurationToString {
+  fn to_string(self) -> String;
+}
+impl DurationToString for Duration {
+  fn to_string(self) -> String {
+    let mut secs = self.as_secs();
+    let mut result = String::with_capacity(10);
+
+    if secs == 0 {
+      result.push_str("0s");
+      return result;
+    }
+
+    let delta = [ 31449600, 604800, 86400, 3600, 60, 1 ];
+    let unit = [ 'y', 'w', 'd', 'h', 'm', 's' ];
+    let mut c = 0;
+
+    loop {
+      if secs >= delta[c] { break; }
+      c += 1;
+    }
+    result.push_str(&format!("{}{}", secs/delta[c], unit[c]));
+    secs = secs%delta[c];
+    if secs != 0 {
+      c += 1;
+      result.push_str(&format!(" {}{}", secs/delta[c], unit[c]));
+    }
+    return result;
+  }
+}
+
 fn connect(addr: &str) -> TcpStream {
   let recon_delay = Duration::new(30, 0);
+  println!("Recon delay increment is {}", recon_delay.to_string());
   loop {
     match TcpStream::connect(addr) {
       Ok(stream) => {
@@ -62,7 +94,7 @@ fn main() {
       match client.write_all(line.as_bytes()) {
         Ok(_) => {
           lines_written += 1;
-          if lines_written%100 == 0 { println!("{} incoming connections | {} lines received | connected for {:?}", INPUTS.load(Ordering::SeqCst), lines_written, conn_since.elapsed()); }
+          if lines_written%100 == 0 { println!("{} incoming connections | {} lines received | connected for {}", INPUTS.load(Ordering::SeqCst), lines_written, conn_since.elapsed().to_string()); }
           break;
         }
         Err(e) => {
