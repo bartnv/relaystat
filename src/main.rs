@@ -65,6 +65,7 @@ fn main() {
   let server = TcpListener::bind(&*args[1]).unwrap_or_else(|e| { println!("Failed to bind to listen address {}: {}", args[1], e.to_string()); exit(1); });
 
   let (input, output) = std::sync::mpsc::channel();
+  let my_input = input.clone();
   thread::spawn(move || {
     for res in server.incoming() {
       let stream = res.unwrap();
@@ -83,18 +84,30 @@ fn main() {
     }
   });
 
+  thread::spawn(move || {
+    let delay = Duration::new(300, 0);
+    loop {
+      thread::sleep(delay);
+      my_input.send("\0".to_string()).unwrap();
+    }
+  });
+
   let mut lines_written = 0;
   let mut client = connect(&*args[2]);
   let mut conn_since = Instant::now();
 
   loop {
     let mut line = output.recv().unwrap();
+    if line == "\0" {
+      println!("{} incoming connections | {} lines relayed | connected for {}", INPUTS.load(Ordering::SeqCst), lines_written, conn_since.elapsed().to_string());
+      lines_written = 0;
+      continue;
+    }
     line.push('\n');
     loop {
       match client.write_all(line.as_bytes()) {
         Ok(_) => {
           lines_written += 1;
-          if lines_written%100 == 0 { println!("{} incoming connections | {} lines received | connected for {}", INPUTS.load(Ordering::SeqCst), lines_written, conn_since.elapsed().to_string()); }
           break;
         }
         Err(e) => {
